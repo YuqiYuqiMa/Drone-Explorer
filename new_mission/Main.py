@@ -12,7 +12,7 @@
 import Drone
 import Policy
 import Board
-import Stats
+import WriteReport
 from time import time
 
 
@@ -22,9 +22,9 @@ def get_paras():
     :return: a list of parameters
     """
     try:
-        f = open("paras.txt","r")
+        f = open("fix_paras.txt", "r")
     except IOError:
-        print "Cannot open paras.txt"
+        print ("Cannot open fix_paras.txt")
     else:
         paras = f.read().split('\n')
         f.close()
@@ -36,24 +36,17 @@ if __name__ == "__main__":
     paras = get_paras()
     row = int(paras[0].split()[0])
     col = int(paras[0].split()[1])
+    wind_dir = int(paras[-1].split()[0])
+    wind_speed = int(paras[-1].split()[1])
 
     board = Board.board
     policy = Policy.Policy(board, (0, 0), (0, row-1), col, row)
-    update_thread = Board.Threading()
-    if paras[-3] == "roomba":
-        drone = Drone.Drone(board, policy.roomba, paras[-2], (int(paras[-1]) if paras[-2] == "movement" else float(paras[-1])), row, col)
-    else:
-        drone = Drone.Drone(board, policy.random, paras[-2], (int(paras[-1]) if paras[-2] == "movement" else float(paras[-1])), row, col)
-    t1 = time()
+    drone = Drone.Drone(Board.board_info, policy, int(paras[1]), row, col, wind_speed, wind_dir)
     drone.run()
-    t2 = time()
-    drone_info = drone.get_stats_info()
-    drone_info = drone_info + (paras[-3], )
-    board_info = Board.board_info.get_board_info()
-    Stats.board_stats(board_info)
-    Stats.drone_stats(drone_info)
-    Stats.drone_total_stats(drone_info)
-    Stats.time_info(t1, t2)
-    update_thread.stop = True
-    update_thread.join()
-
+    t = drone.get_time()
+    #WriteReport.time_info(t[0], t[1])
+    total_events = drone.get_total_events()
+    total_caught_events = drone.get_total_caught_event()
+    total_caught_events_include_same = drone.get_total_caught_event_include_same()
+    WriteReport.stats(total_events, total_caught_events, "catch_rate.txt")
+    WriteReport.stats(total_events, total_caught_events_include_same, "catch_rate_include_same.txt")

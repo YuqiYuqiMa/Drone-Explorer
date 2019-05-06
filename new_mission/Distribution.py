@@ -6,7 +6,6 @@
 # ======================================================================
 
 import random
-import Arena
 
 
 class Distribution:

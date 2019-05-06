@@ -14,10 +14,12 @@ else:
     ts = f1.readlines()
     f1.close()
     s = 0
+    count = 0
     for t in ts:
         if t != "\n" and t != "" and t != " ":
             s += float(t.strip())
-    avg = s/len(ts)
+            count += 1
+    avg = s/count
 
     try:
         f2 = open("time.txt", "w")

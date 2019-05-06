@@ -9,30 +9,36 @@
 import time
 import math
 import random
+from Event import Event
 
 
-class Arena():
+class Arena:
     # Tile Structure
     class __Tile:
         start_time = 0
         finish_time = 0
-        buf = 0
-        dur = 0
+        # buf = 0
+        # dur = 0
         lat = 0
         long = 0
         id = 0
+        event_list = []
+        num_of_events = 0
+        time_with_events = 0
 
     # ===============================================================
     # =                         Constructor
     # ===============================================================
 
-    def __init__(self, my_lat, my_lon, my_time, dur_dis, buf_dis, row, col):
+    def __init__(self, my_lat, my_lon, row, col, arrival_rate, arrival_num, prob, expo, die_expo):#, prob, expo):#dur_dis, buf_dis, row, col):
         """Initializes board with 10 x 10 dimensions
         :param my_lat: the initial latitude
-        :param my_lon: the initial longtitude
-        :param my_time: current time
-        :param buf_dis: buffer time beween events
-        :param dur_dis: duration time of events
+        :param my_lon: the initial longitude
+        :param arrival_rate: The expo distribution of the interval times a new event will come into the sector
+        :param arrival_num: The number of events that will arrive into the board after some time
+        :param prob: The probability that the event will stay in the same quadrant
+        :param expo: The expo distribution of the event about the time it will stay in one sector
+        :param die_expo: The expo distribution of the event about its lifetime
         """
         self.__getsEvent = False
         self.__agentX = 0
@@ -40,15 +46,19 @@ class Arena():
         self.__agentdir = 0
         self.__eventqueue = []
         self.__total_events = 0
-        self.__total_buf = 0
         self.__total_dur = 0
+        self.arrival_rate = arrival_rate
+        self.arrival_num = arrival_num
+        self.prob = prob
+        self.stay_expo = expo
+        self.die_expo = die_expo
+        self.next_add_event_time = 0
         # may update other features and parameters later
-        self.__buf_dis = buf_dis
-        self.__dur_dis = dur_dis
+        #self.__buf_dis = buf_dis
+        #self.__dur_dis = dur_dis
 
         self.__colDimension = col
         self.__rowDimension = row
-        self.__time = my_time
         self.__board = [[self.__Tile() for j in range(self.__colDimension)] for i in range(self.__rowDimension)]
         self.__addLongLat(my_lat, my_lon)
         self.__addEventTimes()
@@ -56,23 +66,6 @@ class Arena():
     # ===============================================================
     # =             Arena Generation Functions
     # ===============================================================
-    def __addEventTimes(self):
-        """
-        This method add event times when the board first crated
-        :return: None
-        """
-        for r in range(self.__rowDimension):
-            for c in range(self.__colDimension):
-                buf_time = self.__buf_dis()
-                self.__board[c][r].start_time = self.__time + buf_time
-                self.__board[c][r].id += 1
-                self.__total_events += 1
-                self.__total_buf += buf_time
-                self.__board[c][r].buf += buf_time
-                dur_time = self.__dur_dis()
-                self.__board[c][r].finish_time = self.__board[c][r].start_time + dur_time
-                self.__total_dur += dur_time
-                self.__board[c][r].dur += dur_time
 
     def __addLongLat(self, lat, lon):
         """
@@ -103,10 +96,41 @@ class Arena():
                 dEast += 10
             dEast = 0
 
+    def __setUpEvent(self):
+        """
+        initializes events
+        :return: None
+        """
+        for _ in range(self.arrival_num):
+            c = random.randint(0,self.__colDimension-1)
+            r = random.randint(0,self.__rowDimension-1)
+            new_event = Event(self.prob, self.die_expo, self.__colDimension-1, self.__rowDimension-1)
+            new_event.update_sector(c, r)
+            new_event.update_die_time(time.time())
+            new_event.update_next_sector()
+            stay_time = self.stay_expo()
+            new_event.update_next_move_time(time.time() + stay_time)
+            copy = list(self.__board[c][r].event_list)
+            copy.append(new_event)
+            self.__board[c][r].event_list = copy
+            self.__total_events += 1
+            self.__board[c][r].num_of_events += 1
+            self.__board[c][r].time_with_events += stay_time
+            self.__total_dur += stay_time
+            self.next_add_event_time = time.time() + self.arrival_rate()
+
+    def __addEventTimes(self):
+        """
+        This method add event times when the board first crated
+        :return: None
+        """
+        self.__setUpEvent()
+
     # ===============================================================
     # =             Arena Fetch Functions
     # ===============================================================
-    def update_board(self):
+
+    def update_board(self):   # !!!think and discuss about efficiency next time!!!
         """
         This method keeps updating the board with new events
         :return: None
@@ -114,16 +138,32 @@ class Arena():
         time_now = time.time()
         for r in range(self.__rowDimension):
             for c in range(self.__colDimension):
-                if time_now > self.__board[c][r].finish_time:
-                    buf_time = self.__buf_dis()
-                    self.__board[c][r].start_time = self.__board[c][r].finish_time +buf_time
-                    self.__board[c][r].id += 1
-                    self.__total_buf += buf_time
-                    self.__board[c][r].buf += buf_time
-                    dur_time = self.__dur_dis()
-                    self.__board[c][r].finish_time = self.__board[c][r].start_time + dur_time
-                    self.__total_dur += dur_time
-                    self.__board[c][r].dur += dur_time
+                length = len(self.__board[c][r].event_list)
+                count = 0
+                while count < length:
+                    event = self.__board[c][r].event_list[count]
+                    if time_now >= event.die_time:  # event are going to die
+                        self.__board[c][r].event_list.remove(event)
+                        length -= 1
+                    else:
+                        if time_now > event.finish_time:  # event need to move
+                            cur_c = event.next_c
+                            cur_r = event.next_r
+                            event.update_sector(cur_c, cur_r)
+                            event.update_next_sector()
+                            stay_time = self.stay_expo()
+                            event.update_next_move_time(stay_time)
+                            self.__board[c][r].event_list.remove(event)
+                            length -= 1
+                            self.__board[cur_c][cur_r].event_list.append(event)
+                            self.__board[cur_c][cur_r].num_of_events += 1
+                            self.__board[cur_c][cur_r].time_with_events += stay_time
+                            self.__total_dur += stay_time
+                        else:
+                            count += 1
+
+        if time_now >= self.next_add_event_time:
+            self.__setUpEvent()
 
     def get_board(self, t):
         """
@@ -138,29 +178,26 @@ class Arena():
                 else:
                     print("NoEvent")
 
-    def get_event(self, c, r, t):
+    def get_event(self, c, r):
         """
-        This method will return if the sector has event or not
+        This method will return if the list of events
         :param c: the column of the board
         :param r: the row of the board
-        :param t: the current time
-        :return: True if this sector at this time has event; false otherwise
+        :return: True if there's event on the current sector, False otherwise
         """
-        if t > self.__board[c][r].start_time:
-            return True
-        return False
+        return self.__board[c][r].event_list
 
-    def get_id(self, c, r, t):
+    def get_id(self, c, r):
         """
         The method gets the current event id
         :param c: the column of the board
         :param r: the row of the board
-        :param t: the current time
-        :return: the event id of current event; 0 if no event this time
+        :return: the a list of event id from the current sector
         """
-        if t > self.__board[c][r].start_time:
-            return self.__board[c][r].id
-        return 0
+        result = []
+        for event in self.__board[c][r].event_list:
+            result.append(event.id)
+        return result
 
     def get_max_id(self, c, r):
         """
@@ -187,16 +224,9 @@ class Arena():
 
         # board_info = Arena(33.24532, 53.12354, time.time())
 
-    def get_average_buf(self):
-        """
-        This method will calculate the average buffer time
-        :return: the average buffer time
-        """
-        return self.__total_buf/self.__total_events
-
     def get_average_dur(self):
         """
-        This method will calculate the average dutation time
+        This method will calculate the average duration time
         :return: the average duration time
         """
         return self.__total_dur/self.__total_events
@@ -206,4 +236,7 @@ class Arena():
         This function will return a tuple of information about the board
         :return: a tuple of information about the board
         """
-        return self.__colDimension, self.__rowDimension, self.__board, self.get_average_buf(), self.get_average_dur()
+        return self.__colDimension, self.__rowDimension, self.__board, self.get_average_dur()
+
+    def get_total_events(self):
+        return self.__total_events
